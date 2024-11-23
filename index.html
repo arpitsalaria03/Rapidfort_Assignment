@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docx to PDF Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 300px;
+        }
+        input[type="file"], input[type="password"] {
+            margin: 10px 0;
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .loading {
+            display: none;
+            margin: 10px 0;
+            color: #4CAF50;
+        }
+        .message {
+            margin-top: 10px;
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+        a {
+            display: inline-block;
+            margin-top: 10px;
+            color: #007BFF;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .metadata {
+            margin-top: 15px;
+            text-align: left;
+        }
+        .delete-button {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .delete-button:hover {
+            background-color: #e53935;
+        }
+        .note {
+            font-size: 0.9rem;
+            color: #555;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Docx to PDF Converter</h2>
+        <form id="uploadForm">
+            <input type="file" id="fileInput" accept=".docx" required>
+            <input type="password" id="passwordInput" placeholder="Enter password (optional)">
+            <button type="submit">Upload & Convert</button>
+            <div id="loading" class="loading">Processing...</div>
+        </form>
+        <div class="message" id="message"></div>
+        <div class="error" id="error"></div>
+        <div id="downloadLink"></div>
+        <div class="metadata" id="metadata"></div>
+        <button id="deleteButton" class="delete-button" style="display: none;">Delete Files</button>
+        <div id="deleteNote" class="note" style="display: none;">
+            Please click the "Delete Files" button to permanently remove your uploaded files from our backend.
+        </div>
+    </div>
+
+    <script>
+        const uploadForm = document.getElementById("uploadForm");
+        const fileInput = document.getElementById("fileInput");
+        const passwordInput = document.getElementById("passwordInput");
+        const messageDiv = document.getElementById("message");
+        const errorDiv = document.getElementById("error");
+        const downloadLinkDiv = document.getElementById("downloadLink");
+        const metadataDiv = document.getElementById("metadata");
+        const deleteButton = document.getElementById("deleteButton");
+        const deleteNote = document.getElementById("deleteNote");
+        const loadingDiv = document.getElementById("loading");
+
+        let currentFilename = null;
+
+        function clearUI() {
+            messageDiv.textContent = "";
+            errorDiv.textContent = "";
+            downloadLinkDiv.innerHTML = "";
+            metadataDiv.innerHTML = "";
+            deleteButton.style.display = "none";
+            deleteNote.style.display = "none";
+            loadingDiv.style.display = "none";
+        }
+
+        async function deleteFiles(filename) {
+            if (!filename) return;
+            try {
+                const response = await fetch(`http://127.0.0.1:8000/delete/?filename=${filename}`, {
+                    method: 'DELETE',
+                });
+
+                if (response.ok) {
+                    clearUI();
+                    fileInput.value = "";
+                    passwordInput.value = "";
+                    currentFilename = null;
+                } else {
+                    const errorData = await response.json();
+                }
+            } catch (error) {
+                errorDiv.textContent = "Error occurred while deleting files.";
+            }
+        }
+
+        uploadForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            clearUI();
+            loadingDiv.style.display = "block";
+
+            const file = fileInput.files[0];
+            const password = passwordInput.value;
+
+            if (!file) {
+                errorDiv.textContent = "Please select a file to upload.";
+                loadingDiv.style.display = "none";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("password", password);
+
+            try {
+                const response = await fetch("http://127.0.0.1:8000/convert/", {
+                    method: "POST",
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    errorDiv.textContent = errorData.detail;
+                    loadingDiv.style.display = "none";
+                    return;
+                }
+
+                const data = await response.json();
+                messageDiv.textContent = data.message;
+
+                const pdfFilename = file.name.replace(".docx", ".pdf");
+                const downloadLink = document.createElement("a");
+                downloadLink.href = `http://127.0.0.1:8000/download/?filename=${file.name}`;
+                downloadLink.textContent = "Download PDF";
+                downloadLink.target = "_blank";
+                downloadLinkDiv.appendChild(downloadLink);
+
+                metadataDiv.innerHTML = `
+                    <strong>Metadata:</strong><br>
+                    <b>File Name:</b> ${data.filename}<br>
+                    <b>File Size:</b> ${data.file_size}<br>
+                    <b>Timestamp:</b> ${data.timestamp}
+                `;
+
+                currentFilename = data.filename;
+                deleteButton.style.display = "inline-block";
+                deleteNote.style.display = "block";
+                loadingDiv.style.display = "none";
+
+                deleteButton.addEventListener("click", async () => {
+                    await deleteFiles(currentFilename);
+                });
+
+            } catch (error) {
+                errorDiv.textContent = "An error occurred while uploading the file.";
+                loadingDiv.style.display = "none";
+            }
+        });
+    </script>
+</body>
+</html>
